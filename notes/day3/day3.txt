@@ -1,0 +1,189 @@
+3. DEP, ROP, and ret2libc
+    * mitigations - DEP/NX, ASLR, canaries, (full) relro, PIC/PIE, fortify source
+    * dep, ret2libc, x86 vs x86-64, ret2libc_32
+    * execve(), (srop)
+    * aslr, rop given leak
+
+==== Mitigations ====
+There are several mitigations in place to prevent the type of exploit we saw
+yesterday. The big three, all of which are enabled by default:
+
+* DEP/NX/W^X
+Data Execution Prevention / Non-eXecutable stack / Write xor eXecute - all
+mapped memory is either writable or executable, but never both
+
+* ASLR
+Address Space Layout Randomization - stack, heap, and share library locations
+are randomized at runtime
+
+* Stack Canaries
+Places a random token in each stack frame separating local variables from the
+saved base pointer and return address
+
+And the runner-ups, which must be specified at compile-time:
+
+* (Full) RELRO
+RElocation Read-Only - makes the got read-only by resolving all shared library
+code when the program is first loaded; programs have partial RELRO by default,
+but it offers very little exploit protection
+
+* PIC/PIE - Position Independent Code/ Executables - an extension of ASLR which
+allows the location of program code to be randomized as well; PIC is for shared
+library code while PIE is for executables
+
+* Fortify Source
+Adds additional checks at compile and/or runtime, but may violate code
+conformity
+
+Something to be aware of: most functions to read input will stop when they
+encounter a whitespace character. Keep this in mind when writing exploits, and
+check "man ascii" when in doubt.
+
+==== DEP and ROP ====
+Return-Oriented Programming (ROP) is an exploit technique to bypass DEP. Rather
+than inject shellcode into the program, we overwrite the return address with one
+or more addresses of snippets of code (gadgets) we want to execute. As long as
+each snippet ends with a ret instruction, each one will be executed.
+
+** ret2libc
+View source, taking note of the use of system()
+Verify that the program has DEP (checksec) and static linking (file)
+
+Our goal is to call system("/bin/sh") to spawn a shell. Both system() and
+"/bin/sh" are located in the binary, so we need to find their locations.
+We also find a "pop ret" gadget so that we can pass "/bin/sh" as the argument.
+
+Find a"pop rdi; ret" address with ROPgadget
+Get the "/bin/sh" address with pwndbg (search /bin/sh)
+Get the system() address with readelf --syms
+Spawn the shell
+
++----------------+
+|  pop rdi; ret  |
++----------------+
+|   "/bin/sh"    |
++----------------+
+|     system     |
++----------------+
+
+This particular ROP technique is called return-to-libc (ret2libc) since we spawn
+the shell by returning to a libc function.
+
+** ret2libc_32
+View the source
+Note the difference in calling convention and the modified ROP chain we need
+Spawn the shell
+
++----------------+
+|     system     |
++----------------+
+|    padding     |
++----------------+
+|   "/bin/sh"    |
++----------------+
+
+Chaining rop gadgets is different in x86 vs x86-64. An x86 rop chain has the
+form
+
++----------------+
+|   function 1   |
++----------------+
+|  pop-pop-ret   |
++----------------+
+|     arg 1      |
++----------------+
+|     arg 2      |
++----------------+
+        + 
++----------------+
+|   function 2   |
++----------------+
+| pop-pop-pop-ret|
++----------------+
+|     arg 1      |
++----------------+
+|     arg 2      |
++----------------+
+|     arg 3      |
++----------------+
+        +
++----------------+
+|      ...       |
++----------------+
+
+While an x86-64 rop chain has the form
+
++--------------------------------+
+|     pop rdi; pop rsi; ret      |
++--------------------------------+
+|            arg 1               |
++--------------------------------+
+|            arg 2               |
++--------------------------------+
+|          function 1            |
++--------------------------------+
+               + 
++--------------------------------+
+| pop rdi; pop rsi; pop rdx; ret |
++--------------------------------+
+|            arg 1               |
++--------------------------------+
+|            arg 2               |
++--------------------------------+
+|            arg 3               |
++--------------------------------+
+|          function 2            |
++--------------------------------+
+               +
++--------------------------------+
+|             ...                |
++--------------------------------+
+
+==== execve() and SROP ====
+If a binary is not linked to system(), we can still spawn a shell by invoking
+the execve() syscall. The value in rax specifies the syscall, and the arguments
+are loaded into registers. The syscall is then invoked by executing the int
+0x80 instruction for x86, or the syscall instruction for x86-64.
+
+Under x86, the registers for syscall arguments are, in order:
+ebx, ecx, edx, esi, edi
+
+Under x86-64, the registers for syscall arguments are, in order:
+rdi, rsi, rdx, r10, r8, r9
+
+In order to write the arguments into registers, we typically use a "pop ret"
+gadget, followed by the arguments we wish to write. For example, the following
+gadget will write 0x3b (the syscall number for execve()) to rax:
+
++--------------------------------+
+|address of pop rax ; ret gadget |
++--------------------------------+
+|              0x3b              |
++--------------------------------+
+
+On x86, the execve() syscall has number 0xb.
+On x86-64, the execve() syscall has number 0x3b.
+
+After using gadgets like the one above to specify all of the syscall arguments,
+we can use a syscall (or int 0x80 on x86) instruction to invoke the syscall.
+
+** syscall
+View source, and note the lack of a system() call
+Note that our goal is to call execve("/bin/sh", NULL, NULL)
+Find a gadget to write 59 (0x3b) to rax
+Spawn a shell
+There is a variant of this called SROP, in which all registers are reset with
+    the rt_sigreturn() syscall.
+
+==== ASLR ====
+Although ASLR randomizes the locations of the stack, heap, and shared libraries,
+each section is still loaded contiguously. This means that if you can leak a
+single library address and you have a copy of the library, you can calculate the
+locations of everything else in the library.
+
+** use_leak
+View the source code, taking note of the leak
+Programmatically read the address with pwntools using read(num)
+Find puts and system offsets with readelf (suffix @@GLIBC_2.2.5)
+Find "/bin/sh" offset with strings -tx
+Spawn the shell

@@ -1,5 +1,7 @@
 # Challenges
 
+You should attempt the challenges in the order listed below:
+
 # Day 1:
 
 * level1
@@ -10,3 +12,9 @@
 * warmup
 * pilot
 * smashme
+
+# Day 3:
+
+* ropi
+* again
+* harder
