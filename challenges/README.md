@@ -18,3 +18,10 @@ You should attempt the challenges in the order listed below:
 * ropi
 * again
 * harder
+
+# Day 4:
+
+* passcode
+* rop2libc
+* ropasaurusrex
+* gnupaint
