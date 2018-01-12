@@ -22,3 +22,16 @@ Materials for the IAP 2018 Fundamentals of Exploitation course.
     * got/plt, rop without leak
     * canaries, canary leak
 5. Competition
+
+## Resources
+
+### Pwning Practice
+
+* [ropemporium.com](http://ropemporium.com)
+* [pwnable.kr](http://pwnable.kr/)
+* [microcorruption](https://microcorruption.com/login)
+* [overthewire](http://overthewire.org/wargames/)
+
+### References
+
+* [TechSec Pwn Tips Wiki](https://github.com/TechSecCTF/CTF-pwn-tips/wiki)
